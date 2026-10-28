@@ -1,6 +1,6 @@
 using Azure.Identity;
-using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
+//using Azure.Storage.Blobs;
+//using Azure.Storage.Blobs.Models;
 
 namespace PricingApi.Storage;
 
@@ -44,27 +44,27 @@ public sealed class LocalFileStore(IConfiguration config, IWebHostEnvironment en
 }
 
 /// <summary>Production store. Uses managed identity (grant the app "Storage Blob Data Contributor").</summary>
-public sealed class BlobFileStore(IConfiguration config) : IFileStore
-{
-    private readonly BlobContainerClient _container = new(
-        new Uri(config["Storage:ContainerUri"] ?? throw new InvalidOperationException("Storage:ContainerUri is not configured.")),
-        new DefaultAzureCredential());
+//public sealed class BlobFileStore(IConfiguration config) : IFileStore
+//{
+//    private readonly BlobContainerClient _container = new(
+//        new Uri(config["Storage:ContainerUri"] ?? throw new InvalidOperationException("Storage:ContainerUri is not configured.")),
+//        new DefaultAzureCredential());
 
-    public async Task<string> SaveAsync(Stream content, string contentType, CancellationToken ct)
-    {
-        var key = Guid.NewGuid().ToString("N");
-        await _container.GetBlobClient(key).UploadAsync(content,
-            new BlobUploadOptions { HttpHeaders = new BlobHttpHeaders { ContentType = contentType } }, ct);
-        return key;
-    }
+//    public async Task<string> SaveAsync(Stream content, string contentType, CancellationToken ct)
+//    {
+//        var key = Guid.NewGuid().ToString("N");
+//        await _container.GetBlobClient(key).UploadAsync(content,
+//            new BlobUploadOptions { HttpHeaders = new BlobHttpHeaders { ContentType = contentType } }, ct);
+//        return key;
+//    }
 
-    public async Task<Stream?> OpenReadAsync(string key, CancellationToken ct)
-    {
-        var blob = _container.GetBlobClient(key);
-        if (!await blob.ExistsAsync(ct)) return null;
-        return await blob.OpenReadAsync(cancellationToken: ct);
-    }
+//    public async Task<Stream?> OpenReadAsync(string key, CancellationToken ct)
+//    {
+//        var blob = _container.GetBlobClient(key);
+//        if (!await blob.ExistsAsync(ct)) return null;
+//        return await blob.OpenReadAsync(cancellationToken: ct);
+//    }
 
-    public Task DeleteAsync(string key, CancellationToken ct) =>
-        _container.GetBlobClient(key).DeleteIfExistsAsync(cancellationToken: ct);
-}
+//    public Task DeleteAsync(string key, CancellationToken ct) =>
+//        _container.GetBlobClient(key).DeleteIfExistsAsync(cancellationToken: ct);
+//}

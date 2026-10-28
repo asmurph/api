@@ -8,16 +8,6 @@ using PricingApi.Services;
 
 namespace PricingApi.Controllers;
 
-/// <summary>
-/// Draft lifecycle:
-///   POST   /api/cases        Submit=false  -> creates a Draft (only Title required)
-///   PUT    /api/cases/{id}   Submit=false  -> updates the Draft (RowVersion required)
-///   PUT    /api/cases/{id}   Submit=true   -> full validation, Draft becomes Open (immutable afterwards)
-///   POST   /api/cases        Submit=true   -> create and open in one step
-///   GET    /api/cases?status=Draft         -> "my drafts"
-///   GET    /api/cases/{id}                 -> load a draft to resume editing
-///   DELETE /api/cases/{id}                 -> discard a draft
-/// </summary>
 [ApiController]
 [Authorize]
 [RequiredScope("access_as_user")]
@@ -53,6 +43,22 @@ public class CasesController(ICaseService cases) : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] CaseStatus? status, CancellationToken ct) =>
         Ok(await cases.ListAsync(CurrentUser.From(User), status, ct));
+
+    [HttpGet("{id:guid}/versions")]
+    [ProducesResponseType<IReadOnlyList<CaseVersionSummary>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListVersions(Guid id, CancellationToken ct)
+    {
+        var result = await cases.ListVersionsAsync(id, CurrentUser.From(User), ct);
+        return result.Kind == ResultKind.Ok ? Ok(result.Value) : Fail(result);
+    }
+
+    [HttpGet("{id:guid}/versions/{revision:int:min(1)}")]
+    [ProducesResponseType<CaseVersionDetail>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetVersion(Guid id, int revision, CancellationToken ct)
+    {
+        var result = await cases.GetVersionAsync(id, revision, CurrentUser.From(User), ct);
+        return result.Kind == ResultKind.Ok ? Ok(result.Value) : Fail(result);
+    }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)

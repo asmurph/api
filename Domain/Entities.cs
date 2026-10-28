@@ -57,6 +57,18 @@ public class PricingCase
     public byte[] RowVersion { get; set; } = [];
 }
 
+public class PricingCaseVersion
+{
+    public Guid Id { get; set; }
+    public Guid CaseId { get; set; }
+    public int Revision { get; set; }
+    public CaseStatus Status { get; set; }
+    public DateTimeOffset SavedAt { get; set; }
+    public string SavedBy { get; set; } = "";
+    public string DataJson { get; set; } = "";
+    public string AttachmentsJson { get; set; } = "";
+}
+
 public class RoutingPlan
 {
     public bool ClinicalJudgment { get; set; }

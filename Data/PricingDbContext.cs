@@ -7,6 +7,7 @@ public class PricingDbContext(DbContextOptions<PricingDbContext> options) : DbCo
 {
     public DbSet<PricingCase> Cases => Set<PricingCase>();
     public DbSet<CaseAttachment> Attachments => Set<CaseAttachment>();
+    public DbSet<PricingCaseVersion> CaseVersions => Set<PricingCaseVersion>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -39,6 +40,7 @@ public class PricingDbContext(DbContextOptions<PricingDbContext> options) : DbCo
             e.Property(c => c.IssueSummary).HasMaxLength(4000);
             e.Property(c => c.ComparatorCodes).HasMaxLength(500);
             e.Property(c => c.SpecialInstructions).HasMaxLength(2000);
+            e.Property(c => c.Revision).HasDefaultValue(1);
             e.Property(c => c.RowVersion).IsRowVersion();
 
             e.OwnsOne(c => c.Routing, r => r.Property(x => x.Rationale).HasMaxLength(2000));
@@ -53,6 +55,17 @@ public class PricingDbContext(DbContextOptions<PricingDbContext> options) : DbCo
             });
 
             e.HasMany(c => c.Attachments).WithOne().HasForeignKey(a => a.CaseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<PricingCaseVersion>(e =>
+        {
+            e.HasKey(v => v.Id);
+            e.Property(v => v.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(v => v.SavedBy).HasMaxLength(64).IsRequired();
+            e.Property(v => v.DataJson).IsRequired();
+            e.Property(v => v.AttachmentsJson).IsRequired();
+            e.HasIndex(v => new { v.CaseId, v.Revision }).IsUnique();
+            e.HasOne<PricingCase>().WithMany().HasForeignKey(v => v.CaseId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<CaseAttachment>(e =>

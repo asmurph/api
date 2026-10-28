@@ -64,14 +64,20 @@ public class SaveCaseRequest
     [MaxLength(25)] public List<Guid>? AttachmentIds { get; set; }
 }
 
-public record SaveCaseResponse(Guid Id, string CaseNumber, string Status, string RowVersion, DateTimeOffset UpdatedAt);
+public record SaveCaseResponse(Guid Id, string CaseNumber, string Status, int Revision, string RowVersion, DateTimeOffset UpdatedAt);
 
 public record AttachmentDto(Guid Id, string Name, long Size, string ContentType);
 
 public record CaseDetail(
-    Guid Id, string CaseNumber, string Status, string RowVersion,
+    Guid Id, string CaseNumber, string Status, int Revision, string RowVersion,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? SubmittedAt,
     SaveCaseRequest Data, IReadOnlyList<AttachmentDto> Attachments);
 
 public record CaseSummary(Guid Id, string CaseNumber, string Status, string Title, string? Code, string Priority,
     DateOnly? DueDate, DateTimeOffset UpdatedAt);
+
+public record CaseVersionSummary(Guid CaseId, int Revision, string Status, DateTimeOffset SavedAt, string SavedBy);
+
+public record CaseVersionDetail(
+    Guid CaseId, int Revision, string Status, DateTimeOffset SavedAt, string SavedBy,
+    SaveCaseRequest Data, IReadOnlyList<AttachmentDto> Attachments);

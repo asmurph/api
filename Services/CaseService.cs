@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PricingApi.Data;
 using PricingApi.Domain;
@@ -11,7 +12,6 @@ public sealed record CurrentUser(string Id, string Name)
 {
     public static CurrentUser From(ClaimsPrincipal p)
     {
-        // JwtBearer may or may not remap "oid" to the long claim URI depending on MapInboundClaims.
         var id = p.FindFirstValue("oid")
                  ?? p.FindFirstValue("http://schemas.microsoft.com/identity/claims/objectidentifier")
                  ?? throw new InvalidOperationException("Token has no object id claim.");
@@ -36,11 +36,14 @@ public interface ICaseService
     Task<Result<CaseDetail>> GetAsync(Guid id, CurrentUser user, CancellationToken ct);
     Task<IReadOnlyList<CaseSummary>> ListAsync(CurrentUser user, CaseStatus? status, CancellationToken ct);
     Task<Result<bool>> DeleteDraftAsync(Guid id, CurrentUser user, CancellationToken ct);
+    Task<Result<IReadOnlyList<CaseVersionSummary>>> ListVersionsAsync(Guid id, CurrentUser user, CancellationToken ct);
+    Task<Result<CaseVersionDetail>> GetVersionAsync(Guid id, int revision, CurrentUser user, CancellationToken ct);
 }
 
 public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<CaseService> log) : ICaseService
 {
     private const int MaxDraftsPerUser = 50;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<Result<SaveCaseResponse>> SaveAsync(Guid? id, SaveCaseRequest req, CurrentUser user, CancellationToken ct)
     {
@@ -77,6 +80,9 @@ public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<C
 
             try { db.Entry(c).Property(x => x.RowVersion).OriginalValue = Convert.FromBase64String(req.RowVersion!); }
             catch (FormatException) { return Result<SaveCaseResponse>.Invalid(new() { ["rowVersion"] = ["Malformed."] }); }
+
+            db.CaseVersions.Add(CreateSnapshot(c, user));
+            c.Revision++;
         }
 
         Apply(c, req);
@@ -108,7 +114,7 @@ public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<C
         }
 
         return Result<SaveCaseResponse>.Ok(new(c.Id, c.CaseNumber, c.Status.ToString(),
-            Convert.ToBase64String(c.RowVersion), c.UpdatedAt));
+            c.Revision, Convert.ToBase64String(c.RowVersion), c.UpdatedAt));
     }
 
     public async Task<Result<CaseDetail>> GetAsync(Guid id, CurrentUser user, CancellationToken ct)
@@ -125,6 +131,36 @@ public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<C
         return await q.OrderByDescending(x => x.UpdatedAt).Take(200)
             .Select(x => new CaseSummary(x.Id, x.CaseNumber, x.Status.ToString(), x.Title, x.Code, x.Priority, x.DueDate, x.UpdatedAt))
             .ToListAsync(ct);
+    }
+
+    public async Task<Result<IReadOnlyList<CaseVersionSummary>>> ListVersionsAsync(Guid id, CurrentUser user, CancellationToken ct)
+    {
+        var owned = await db.Cases.AsNoTracking().AnyAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
+        if (!owned) return Result<IReadOnlyList<CaseVersionSummary>>.NotFound();
+
+        var versions = await db.CaseVersions.AsNoTracking()
+            .Where(v => v.CaseId == id)
+            .OrderByDescending(v => v.Revision)
+            .Select(v => new CaseVersionSummary(v.CaseId, v.Revision, v.Status.ToString(), v.SavedAt, v.SavedBy))
+            .ToListAsync(ct);
+
+        return Result<IReadOnlyList<CaseVersionSummary>>.Ok(versions);
+    }
+
+    public async Task<Result<CaseVersionDetail>> GetVersionAsync(Guid id, int revision, CurrentUser user, CancellationToken ct)
+    {
+        var owned = await db.Cases.AsNoTracking().AnyAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
+        if (!owned) return Result<CaseVersionDetail>.NotFound();
+
+        var v = await db.CaseVersions.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.CaseId == id && x.Revision == revision, ct);
+        if (v is null) return Result<CaseVersionDetail>.NotFound();
+
+        var data = JsonSerializer.Deserialize<SaveCaseRequest>(v.DataJson, JsonOptions) ?? new SaveCaseRequest();
+        var attachments = JsonSerializer.Deserialize<List<AttachmentDto>>(v.AttachmentsJson, JsonOptions) ?? [];
+
+        return Result<CaseVersionDetail>.Ok(
+            new CaseVersionDetail(v.CaseId, v.Revision, v.Status.ToString(), v.SavedAt, v.SavedBy, data, attachments));
     }
 
     public async Task<Result<bool>> DeleteDraftAsync(Guid id, CurrentUser user, CancellationToken ct)
@@ -199,7 +235,9 @@ public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<C
             var applicable = Applies(p.Name);
             c.WorkPortions.Add(new WorkPortion
             {
-                Sequence = c.WorkPortions.Count + 1, Name = p.Name, Applicable = applicable,
+                Sequence = c.WorkPortions.Count + 1,
+                Name = p.Name,
+                Applicable = applicable,
                 Team = applicable && !string.IsNullOrWhiteSpace(p.Team) ? p.Team : null,
                 DueDate = applicable ? p.DueDate : null,
             });
@@ -229,28 +267,64 @@ public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<C
         return null;
     }
 
-    private static CaseDetail ToDetail(PricingCase c)
+    private static PricingCaseVersion CreateSnapshot(PricingCase c, CurrentUser user) => new()
     {
-        var data = new SaveCaseRequest
+        Id = Guid.NewGuid(),
+        CaseId = c.Id,
+        Revision = c.Revision,
+        Status = c.Status,
+        SavedAt = DateTimeOffset.UtcNow,
+        SavedBy = user.Id,
+        DataJson = JsonSerializer.Serialize(ToRequest(c), JsonOptions),
+        AttachmentsJson = JsonSerializer.Serialize(
+            c.Attachments.Select(a => new AttachmentDto(a.Id, a.FileName, a.Size, a.ContentType)).ToList(), JsonOptions),
+    };
+
+    private static SaveCaseRequest ToRequest(PricingCase c) => new()
+    {
+        Title = c.Title,
+        RequestType = c.RequestType,
+        WorkType = c.WorkType,
+        Priority = c.Priority,
+        RequestSource = c.RequestSource,
+        DateReceived = c.DateReceived,
+        CodeMode = c.CodeMode,
+        Code = c.Code,
+        Descriptor = c.Descriptor,
+        Parenthetical = c.Parenthetical,
+        Manufacturer = c.Manufacturer,
+        Product = c.Product,
+        SiteOfService = c.SiteOfService,
+        EffectiveDate = c.EffectiveDate,
+        Jurisdiction = c.Jurisdiction,
+        DueDate = c.DueDate,
+        Assignee = c.Assignee,
+        Urgent = c.Urgent,
+        Routing = new RoutingDto
         {
-            Title = c.Title, RequestType = c.RequestType, WorkType = c.WorkType, Priority = c.Priority,
-            RequestSource = c.RequestSource, DateReceived = c.DateReceived, CodeMode = c.CodeMode, Code = c.Code,
-            Descriptor = c.Descriptor, Parenthetical = c.Parenthetical, Manufacturer = c.Manufacturer,
-            Product = c.Product, SiteOfService = c.SiteOfService, EffectiveDate = c.EffectiveDate,
-            Jurisdiction = c.Jurisdiction, DueDate = c.DueDate, Assignee = c.Assignee, Urgent = c.Urgent,
-            Routing = new RoutingDto
+            ClinicalJudgment = c.Routing.ClinicalJudgment,
+            NovelTechnology = c.Routing.NovelTechnology,
+            MethodologyChanges = c.Routing.MethodologyChanges,
+            Rationale = c.Routing.Rationale,
+        },
+        WorkPortions = c.WorkPortions.OrderBy(p => p.Sequence)
+            .Select(p => new WorkPortionDto
             {
-                ClinicalJudgment = c.Routing.ClinicalJudgment, NovelTechnology = c.Routing.NovelTechnology,
-                MethodologyChanges = c.Routing.MethodologyChanges, Rationale = c.Routing.Rationale,
-            },
-            WorkPortions = c.WorkPortions.OrderBy(p => p.Sequence)
-                .Select(p => new WorkPortionDto { Sequence = p.Sequence, Name = p.Name, Team = p.Team, DueDate = p.DueDate }).ToList(),
-            NotifyTeams = c.NotifyTeams, LockRouting = c.LockRouting, IssueSummary = c.IssueSummary,
-            ComparatorCodes = c.ComparatorCodes, SpecialInstructions = c.SpecialInstructions,
-            AttachmentIds = c.Attachments.Select(a => a.Id).ToList(),
-        };
-        return new CaseDetail(c.Id, c.CaseNumber, c.Status.ToString(), Convert.ToBase64String(c.RowVersion),
-            c.CreatedAt, c.UpdatedAt, c.SubmittedAt, data,
+                Sequence = p.Sequence,
+                Name = p.Name,
+                Team = p.Team,
+                DueDate = p.DueDate,
+            }).ToList(),
+        NotifyTeams = c.NotifyTeams,
+        LockRouting = c.LockRouting,
+        IssueSummary = c.IssueSummary,
+        ComparatorCodes = c.ComparatorCodes,
+        SpecialInstructions = c.SpecialInstructions,
+        AttachmentIds = c.Attachments.Select(a => a.Id).ToList(),
+    };
+
+    private static CaseDetail ToDetail(PricingCase c) =>
+        new(c.Id, c.CaseNumber, c.Status.ToString(), c.Revision, Convert.ToBase64String(c.RowVersion),
+            c.CreatedAt, c.UpdatedAt, c.SubmittedAt, ToRequest(c),
             c.Attachments.Select(a => new AttachmentDto(a.Id, a.FileName, a.Size, a.ContentType)).ToList());
-    }
 }
