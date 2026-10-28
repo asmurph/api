@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Wraps Microsoft.AspNetCore.Authentication.JwtBearer with Entra ID defaults
+         (issuer/audience/signing-key validation via OIDC metadata). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.22">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.22" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.22">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Identity.Web" Version="3.*" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.6" />
+  </ItemGroup>
+
+</Project>
