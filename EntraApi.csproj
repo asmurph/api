@@ -9,6 +9,7 @@
   <ItemGroup>
     <!-- Wraps Microsoft.AspNetCore.Authentication.JwtBearer with Entra ID defaults
          (issuer/audience/signing-key validation via OIDC metadata). -->
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.22">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
