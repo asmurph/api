@@ -8,6 +8,7 @@ public class PricingDbContext(DbContextOptions<PricingDbContext> options) : DbCo
     public DbSet<PricingCase> Cases => Set<PricingCase>();
     public DbSet<CaseAttachment> Attachments => Set<CaseAttachment>();
     public DbSet<PricingCaseVersion> CaseVersions => Set<PricingCaseVersion>();
+    public DbSet<CaseFileVersion> CaseFileVersions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder b)
     {

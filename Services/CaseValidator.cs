@@ -9,11 +9,19 @@ namespace PricingApi.Services;
 /// </summary>
 public static partial class CaseValidator
 {
-    public static readonly string[] RequestTypes = ["CMS request", "Change request", "External inquiry"];
-    public static readonly string[] WorkTypes = ["RVU", "Drugs/biologicals", "Portable X-ray", "Blood products"];
+    public static readonly string[] RequestTypes =
+    [
+        "CR", "TDLR", "Internal Inquiry", "External inquiry", "Recondsideration Request",
+        "Senior Leadershipt Request", "CMS Request", "DOJ", "OIG", "UPIC", "FOIA",
+    ];
+    public static readonly string[] WorkTypes =
+    [
+        "Ambulatory Surgical Center", "Blood products", "Category 3 Codes", "Clinical Lab", "Critical Access Hospital",
+        "Drugs/biologicals", "Indicator 1", "MPFS/RU", "Portable X-ray", "Radio Pharmaceuticals", "TPNIES",
+    ];
     public static readonly string[] Priorities = ["High", "Medium", "Low"];
     public static readonly string[] RequestSources = ["CMS", "Contractor", "Internal"];
-    public static readonly string[] Jurisdictions = ["Jurisdiction A", "Jurisdiction B", "National"];
+    public static readonly string[] Jurisdictions = ["JH", "JL", "JN", "ALL"];
     public static readonly string[] Sites = ["Facility", "Nonfacility", "Both"];
     public static readonly string[] Teams = ["Pricing", "Clinical", "QA", "Systems"];
     public static readonly string[] PortionNames =

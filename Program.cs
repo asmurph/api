@@ -1,3 +1,4 @@
+using EntraApi.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
@@ -13,17 +14,34 @@ builder.Services.AddDbContext<PricingDbContext>(options =>
         builder.Configuration.GetConnectionString("DefaultConnection")
         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.")));
 
+// Validate SharePoint settings at startup (fail fast)
+var sharePointSection = builder.Configuration.GetRequiredSection("SharePoint");
+var sharePointOptions = sharePointSection.Get<SharePointOptions>()
+    ?? throw new InvalidOperationException("SharePoint configuration section is missing.");
+
+if (string.IsNullOrWhiteSpace(sharePointOptions.TenantId) ||
+    string.IsNullOrWhiteSpace(sharePointOptions.ClientId) ||
+    string.IsNullOrWhiteSpace(sharePointOptions.ClientSecret) ||
+    string.IsNullOrWhiteSpace(sharePointOptions.DriveId))
+{
+    throw new InvalidOperationException(
+        "SharePoint configuration is invalid. Required: SharePoint:TenantId, ClientId, ClientSecret, DriveId.");
+}
+
+builder.Services.Configure<SharePointOptions>(sharePointSection);
+
 builder.Services.AddScoped<ICaseService, CaseService>();
 builder.Services.AddScoped<IFileStore, LocalFileStore>();
 
-// ---- Authentication: validate Entra ID JWT bearer tokens ----------------------
+builder.Services.AddHttpClient<SharePointGraphService>();
+builder.Services.AddScoped<ISharePointLibraryService, SharePointLibraryService>();
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
 
 builder.Services.AddAuthorization();
 
-// ---- CORS: allow the React dev server -----------------------------------------
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
                      ?? ["http://localhost:5173"];
 builder.Services.AddCors(options =>
@@ -35,7 +53,6 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddControllers();
-
 // ---- Swagger/OpenAPI -----------------------------------------------------------
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>

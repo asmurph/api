@@ -81,3 +81,32 @@ public record CaseVersionSummary(Guid CaseId, int Revision, string Status, DateT
 public record CaseVersionDetail(
     Guid CaseId, int Revision, string Status, DateTimeOffset SavedAt, string SavedBy,
     SaveCaseRequest Data, IReadOnlyList<AttachmentDto> Attachments);
+
+public record SharePointFileVersionDto(
+    Guid Id,
+    Guid CaseId,
+    Guid AttachmentId,
+    int CaseRevision,
+    string FileName,
+    string SharePointItemId,
+    string SharePointWebUrl,
+    string SharePointETag,
+    string SharePointVersion,
+    DateTimeOffset UploadedAt,
+    string UploadedBy);
+
+public record PublishCaseFilesResponse(Guid CaseId, int CaseRevision, IReadOnlyList<SharePointFileVersionDto> Files);
+
+public record AdminCaseSummary(
+    Guid Id,
+    string CaseNumber,
+    string Status,
+    string Title,
+    string OwnerId,
+    string OwnerName,
+    string? Code,
+    string Priority,
+    DateOnly? DueDate,
+    int Revision,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);

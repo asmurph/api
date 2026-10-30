@@ -1,0 +1,228 @@
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+
+BEGIN TRY
+    BEGIN TRANSACTION;
+
+    -- 1) Sequence for case number generation
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.sequences
+        WHERE name = N'CaseNumbers'
+          AND SCHEMA_NAME(schema_id) = N'dbo'
+    )
+    BEGIN
+        EXEC(N'
+            CREATE SEQUENCE [dbo].[CaseNumbers]
+                AS INT
+                START WITH 1
+                INCREMENT BY 1;
+        ');
+    END;
+
+    -- 2) Cases
+    IF OBJECT_ID(N'[dbo].[Cases]', N'U') IS NULL
+    BEGIN
+        CREATE TABLE [dbo].[Cases]
+        (
+            [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_Cases] PRIMARY KEY,
+            [CaseNumber] NVARCHAR(20) NOT NULL,
+            [Status] NVARCHAR(20) NOT NULL,
+            [OwnerId] NVARCHAR(64) NOT NULL,
+            [OwnerName] NVARCHAR(200) NOT NULL,
+            [Title] NVARCHAR(200) NOT NULL,
+            [RequestType] NVARCHAR(50) NULL,
+            [WorkType] NVARCHAR(50) NULL,
+            [Priority] NVARCHAR(20) NOT NULL,
+            [RequestSource] NVARCHAR(50) NULL,
+            [DateReceived] DATE NULL,
+            [CodeMode] NVARCHAR(20) NOT NULL,
+            [Code] NVARCHAR(10) NULL,
+            [Descriptor] NVARCHAR(500) NULL,
+            [Parenthetical] NVARCHAR(500) NULL,
+            [Manufacturer] NVARCHAR(200) NULL,
+            [Product] NVARCHAR(200) NULL,
+            [SiteOfService] NVARCHAR(20) NULL,
+            [EffectiveDate] DATE NULL,
+            [Jurisdiction] NVARCHAR(50) NULL,
+            [DueDate] DATE NULL,
+            [Assignee] NVARCHAR(100) NULL,
+            [Urgent] BIT NOT NULL CONSTRAINT [DF_Cases_Urgent] DEFAULT (0),
+
+            [Routing_ClinicalJudgment] BIT NOT NULL CONSTRAINT [DF_Cases_Routing_ClinicalJudgment] DEFAULT (0),
+            [Routing_NovelTechnology] BIT NOT NULL CONSTRAINT [DF_Cases_Routing_NovelTechnology] DEFAULT (0),
+            [Routing_MethodologyChanges] BIT NOT NULL CONSTRAINT [DF_Cases_Routing_MethodologyChanges] DEFAULT (0),
+            [Routing_Rationale] NVARCHAR(2000) NULL,
+            [Routing_TechnologyAssessmentRequired] BIT NOT NULL CONSTRAINT [DF_Cases_Routing_TechnologyAssessmentRequired] DEFAULT (0),
+            [Routing_CmdReviewRequired] BIT NOT NULL CONSTRAINT [DF_Cases_Routing_CmdReviewRequired] DEFAULT (0),
+
+            [NotifyTeams] BIT NOT NULL CONSTRAINT [DF_Cases_NotifyTeams] DEFAULT (0),
+            [LockRouting] BIT NOT NULL CONSTRAINT [DF_Cases_LockRouting] DEFAULT (0),
+            [IssueSummary] NVARCHAR(4000) NULL,
+            [ComparatorCodes] NVARCHAR(500) NULL,
+            [SpecialInstructions] NVARCHAR(2000) NULL,
+
+            [Revision] INT NOT NULL CONSTRAINT [DF_Cases_Revision] DEFAULT (1),
+            [CreatedAt] DATETIMEOFFSET NOT NULL,
+            [UpdatedAt] DATETIMEOFFSET NOT NULL,
+            [SubmittedAt] DATETIMEOFFSET NULL,
+            [RowVersion] ROWVERSION NOT NULL,
+
+            CONSTRAINT [CK_Cases_Status] CHECK ([Status] IN (N'Draft', N'Open'))
+        );
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_Cases_CaseNumber'
+          AND object_id = OBJECT_ID(N'[dbo].[Cases]')
+    )
+        CREATE UNIQUE INDEX [IX_Cases_CaseNumber] ON [dbo].[Cases]([CaseNumber]);
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_Cases_OwnerId_Status'
+          AND object_id = OBJECT_ID(N'[dbo].[Cases]')
+    )
+        CREATE INDEX [IX_Cases_OwnerId_Status] ON [dbo].[Cases]([OwnerId], [Status]);
+
+    -- 3) Attachments
+    IF OBJECT_ID(N'[dbo].[Attachments]', N'U') IS NULL
+    BEGIN
+        CREATE TABLE [dbo].[Attachments]
+        (
+            [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_Attachments] PRIMARY KEY,
+            [CaseId] UNIQUEIDENTIFIER NULL,
+            [DraftKey] NVARCHAR(64) NOT NULL,
+            [FileName] NVARCHAR(255) NOT NULL,
+            [ContentType] NVARCHAR(150) NOT NULL,
+            [Size] BIGINT NOT NULL,
+            [StorageKey] NVARCHAR(200) NOT NULL,
+            [UploadedBy] NVARCHAR(64) NOT NULL,
+            [UploadedAt] DATETIMEOFFSET NOT NULL,
+
+            CONSTRAINT [FK_Attachments_Cases_CaseId]
+                FOREIGN KEY ([CaseId]) REFERENCES [dbo].[Cases]([Id]) ON DELETE CASCADE
+        );
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_Attachments_CaseId'
+          AND object_id = OBJECT_ID(N'[dbo].[Attachments]')
+    )
+        CREATE INDEX [IX_Attachments_CaseId] ON [dbo].[Attachments]([CaseId]);
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_Attachments_UploadedBy_DraftKey'
+          AND object_id = OBJECT_ID(N'[dbo].[Attachments]')
+    )
+        CREATE INDEX [IX_Attachments_UploadedBy_DraftKey] ON [dbo].[Attachments]([UploadedBy], [DraftKey]);
+
+    -- 4) Case version snapshots
+    IF OBJECT_ID(N'[dbo].[CaseVersions]', N'U') IS NULL
+    BEGIN
+        CREATE TABLE [dbo].[CaseVersions]
+        (
+            [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_CaseVersions] PRIMARY KEY,
+            [CaseId] UNIQUEIDENTIFIER NOT NULL,
+            [Revision] INT NOT NULL,
+            [Status] NVARCHAR(20) NOT NULL,
+            [SavedAt] DATETIMEOFFSET NOT NULL,
+            [SavedBy] NVARCHAR(64) NOT NULL,
+            [DataJson] NVARCHAR(MAX) NOT NULL,
+            [AttachmentsJson] NVARCHAR(MAX) NOT NULL,
+
+            CONSTRAINT [FK_CaseVersions_Cases_CaseId]
+                FOREIGN KEY ([CaseId]) REFERENCES [dbo].[Cases]([Id]) ON DELETE CASCADE
+        );
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_CaseVersions_CaseId_Revision'
+          AND object_id = OBJECT_ID(N'[dbo].[CaseVersions]')
+    )
+        CREATE UNIQUE INDEX [IX_CaseVersions_CaseId_Revision] ON [dbo].[CaseVersions]([CaseId], [Revision]);
+
+    -- 5) Work portions
+    IF OBJECT_ID(N'[dbo].[CaseWorkPortions]', N'U') IS NULL
+    BEGIN
+        CREATE TABLE [dbo].[CaseWorkPortions]
+        (
+            [Id] INT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_CaseWorkPortions] PRIMARY KEY,
+            [Sequence] INT NOT NULL,
+            [Name] NVARCHAR(100) NOT NULL,
+            [Applicable] BIT NOT NULL,
+            [Team] NVARCHAR(50) NULL,
+            [DueDate] DATE NULL,
+            [CaseId] UNIQUEIDENTIFIER NOT NULL,
+
+            CONSTRAINT [FK_CaseWorkPortions_Cases_CaseId]
+                FOREIGN KEY ([CaseId]) REFERENCES [dbo].[Cases]([Id]) ON DELETE CASCADE
+        );
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_CaseWorkPortions_CaseId'
+          AND object_id = OBJECT_ID(N'[dbo].[CaseWorkPortions]')
+    )
+        CREATE INDEX [IX_CaseWorkPortions_CaseId] ON [dbo].[CaseWorkPortions]([CaseId]);
+
+    -- 6) SharePoint metadata per file/revision
+    IF OBJECT_ID(N'[dbo].[CaseFileVersions]', N'U') IS NULL
+    BEGIN
+        CREATE TABLE [dbo].[CaseFileVersions]
+        (
+            [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_CaseFileVersions] PRIMARY KEY,
+            [CaseId] UNIQUEIDENTIFIER NOT NULL,
+            [AttachmentId] UNIQUEIDENTIFIER NOT NULL,
+            [CaseRevision] INT NOT NULL,
+            [FileName] NVARCHAR(255) NOT NULL,
+            [SharePointItemId] NVARCHAR(150) NOT NULL,
+            [SharePointWebUrl] NVARCHAR(1000) NOT NULL,
+            [SharePointETag] NVARCHAR(300) NOT NULL,
+            [SharePointVersion] NVARCHAR(50) NOT NULL,
+            [UploadedAt] DATETIMEOFFSET NOT NULL,
+            [UploadedBy] NVARCHAR(64) NOT NULL,
+
+            CONSTRAINT [FK_CaseFileVersions_Cases_CaseId]
+                FOREIGN KEY ([CaseId]) REFERENCES [dbo].[Cases]([Id]) ON DELETE CASCADE,
+            CONSTRAINT [FK_CaseFileVersions_Attachments_AttachmentId]
+                FOREIGN KEY ([AttachmentId]) REFERENCES [dbo].[Attachments]([Id]) ON DELETE NO ACTION
+        );
+    END;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_CaseFileVersions_CaseId_CaseRevision_AttachmentId'
+          AND object_id = OBJECT_ID(N'[dbo].[CaseFileVersions]')
+    )
+        CREATE UNIQUE INDEX [IX_CaseFileVersions_CaseId_CaseRevision_AttachmentId]
+            ON [dbo].[CaseFileVersions]([CaseId], [CaseRevision], [AttachmentId]);
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_CaseFileVersions_AttachmentId'
+          AND object_id = OBJECT_ID(N'[dbo].[CaseFileVersions]')
+    )
+        CREATE INDEX [IX_CaseFileVersions_AttachmentId] ON [dbo].[CaseFileVersions]([AttachmentId]);
+
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0
+        ROLLBACK TRANSACTION;
+
+    THROW;
+END CATCH;

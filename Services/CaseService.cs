@@ -5,11 +5,14 @@ using PricingApi.Data;
 using PricingApi.Domain;
 using PricingApi.Dtos;
 using PricingApi.Storage;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace PricingApi.Services;
 
 public sealed record CurrentUser(string Id, string Name)
 {
+    public const string AdminRole = "Admin";
+
     public static CurrentUser From(ClaimsPrincipal p)
     {
         var id = p.FindFirstValue("oid")
@@ -35,12 +38,19 @@ public interface ICaseService
     Task<Result<SaveCaseResponse>> SaveAsync(Guid? id, SaveCaseRequest req, CurrentUser user, CancellationToken ct);
     Task<Result<CaseDetail>> GetAsync(Guid id, CurrentUser user, CancellationToken ct);
     Task<IReadOnlyList<CaseSummary>> ListAsync(CurrentUser user, CaseStatus? status, CancellationToken ct);
+    Task<IReadOnlyList<AdminCaseSummary>> ListAllAsync(CaseStatus? status, CancellationToken ct);
     Task<Result<bool>> DeleteDraftAsync(Guid id, CurrentUser user, CancellationToken ct);
     Task<Result<IReadOnlyList<CaseVersionSummary>>> ListVersionsAsync(Guid id, CurrentUser user, CancellationToken ct);
     Task<Result<CaseVersionDetail>> GetVersionAsync(Guid id, int revision, CurrentUser user, CancellationToken ct);
+    Task<Result<PublishCaseFilesResponse>> PublishFilesAsync(Guid id, CurrentUser user, CancellationToken ct);
+    Task<Result<IReadOnlyList<SharePointFileVersionDto>>> ListFileVersionsAsync(Guid id, CurrentUser user, CancellationToken ct);
 }
 
-public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<CaseService> log) : ICaseService
+public sealed class CaseService(
+    PricingDbContext db,
+    IFileStore files,
+    ISharePointLibraryService sharePoint,
+    ILogger<CaseService> log) : ICaseService
 {
     private const int MaxDraftsPerUser = 50;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -133,34 +143,25 @@ public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<C
             .ToListAsync(ct);
     }
 
-    public async Task<Result<IReadOnlyList<CaseVersionSummary>>> ListVersionsAsync(Guid id, CurrentUser user, CancellationToken ct)
+    public async Task<IReadOnlyList<AdminCaseSummary>> ListAllAsync(CaseStatus? status, CancellationToken ct)
     {
-        var owned = await db.Cases.AsNoTracking().AnyAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
-        if (!owned) return Result<IReadOnlyList<CaseVersionSummary>>.NotFound();
-
-        var versions = await db.CaseVersions.AsNoTracking()
-            .Where(v => v.CaseId == id)
-            .OrderByDescending(v => v.Revision)
-            .Select(v => new CaseVersionSummary(v.CaseId, v.Revision, v.Status.ToString(), v.SavedAt, v.SavedBy))
+        var q = db.Cases.AsNoTracking();
+        if (status is not null) q = q.Where(x => x.Status == status);
+        return await q.OrderByDescending(x => x.CreatedAt).Take(1000)
+            .Select(x => new AdminCaseSummary(
+                x.Id,
+                x.CaseNumber,
+                x.Status.ToString(),
+                x.Title,
+                x.OwnerId,
+                x.OwnerName,
+                x.Code,
+                x.Priority,
+                x.DueDate,
+                x.Revision,
+                x.CreatedAt,
+                x.UpdatedAt))
             .ToListAsync(ct);
-
-        return Result<IReadOnlyList<CaseVersionSummary>>.Ok(versions);
-    }
-
-    public async Task<Result<CaseVersionDetail>> GetVersionAsync(Guid id, int revision, CurrentUser user, CancellationToken ct)
-    {
-        var owned = await db.Cases.AsNoTracking().AnyAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
-        if (!owned) return Result<CaseVersionDetail>.NotFound();
-
-        var v = await db.CaseVersions.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.CaseId == id && x.Revision == revision, ct);
-        if (v is null) return Result<CaseVersionDetail>.NotFound();
-
-        var data = JsonSerializer.Deserialize<SaveCaseRequest>(v.DataJson, JsonOptions) ?? new SaveCaseRequest();
-        var attachments = JsonSerializer.Deserialize<List<AttachmentDto>>(v.AttachmentsJson, JsonOptions) ?? [];
-
-        return Result<CaseVersionDetail>.Ok(
-            new CaseVersionDetail(v.CaseId, v.Revision, v.Status.ToString(), v.SavedAt, v.SavedBy, data, attachments));
     }
 
     public async Task<Result<bool>> DeleteDraftAsync(Guid id, CurrentUser user, CancellationToken ct)
@@ -180,12 +181,121 @@ public sealed class CaseService(PricingDbContext db, IFileStore files, ILogger<C
         return Result<bool>.Ok(true);
     }
 
+    public async Task<Result<IReadOnlyList<CaseVersionSummary>>> ListVersionsAsync(Guid id, CurrentUser user, CancellationToken ct)
+    {
+        var owned = await db.Cases.AsNoTracking().AnyAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
+        if (!owned) return Result<IReadOnlyList<CaseVersionSummary>>.NotFound();
+
+        var rows = await db.CaseVersions.AsNoTracking()
+            .Where(x => x.CaseId == id)
+            .OrderByDescending(x => x.Revision)
+            .ToListAsync(ct);
+
+        IReadOnlyList<CaseVersionSummary> list = rows
+            .Select(x => new CaseVersionSummary(x.CaseId, x.Revision, x.Status.ToString(), x.SavedAt, x.SavedBy))
+            .ToList();
+        return Result<IReadOnlyList<CaseVersionSummary>>.Ok(list);
+    }
+
+    public async Task<Result<CaseVersionDetail>> GetVersionAsync(Guid id, int revision, CurrentUser user, CancellationToken ct)
+    {
+        var owned = await db.Cases.AsNoTracking().AnyAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
+        if (!owned) return Result<CaseVersionDetail>.NotFound();
+
+        var v = await db.CaseVersions.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.CaseId == id && x.Revision == revision, ct);
+        if (v is null) return Result<CaseVersionDetail>.NotFound();
+
+        var data = JsonSerializer.Deserialize<SaveCaseRequest>(v.DataJson, JsonOptions) ?? new SaveCaseRequest();
+        var attachments = JsonSerializer.Deserialize<List<AttachmentDto>>(v.AttachmentsJson, JsonOptions) ?? [];
+        return Result<CaseVersionDetail>.Ok(new CaseVersionDetail(
+            v.CaseId, v.Revision, v.Status.ToString(), v.SavedAt, v.SavedBy, data, attachments));
+    }
+
+    public async Task<Result<PublishCaseFilesResponse>> PublishFilesAsync(Guid id, CurrentUser user, CancellationToken ct)
+    {
+        var c = await db.Cases.Include(x => x.Attachments)
+            .FirstOrDefaultAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
+        if (c is null) return Result<PublishCaseFilesResponse>.NotFound();
+
+        var alreadyPublished = await db.CaseFileVersions
+            .Where(x => x.CaseId == c.Id && x.CaseRevision == c.Revision)
+            .Select(x => x.AttachmentId)
+            .ToListAsync(ct);
+        var already = alreadyPublished.ToHashSet();
+
+        foreach (var a in c.Attachments.Where(x => !already.Contains(x.Id)))
+        {
+            var stream = await files.OpenReadAsync(a.StorageKey, ct);
+            if (stream is null)
+                return Result<PublishCaseFilesResponse>.Conflict($"Attachment '{a.FileName}' storage payload was not found.");
+
+            await using (stream)
+            {
+                var uploaded = await sharePoint.UploadCaseFileAsync(c, a, stream, ct);
+                db.CaseFileVersions.Add(new CaseFileVersion
+                {
+                    Id = Guid.NewGuid(),
+                    CaseId = c.Id,
+                    AttachmentId = a.Id,
+                    CaseRevision = c.Revision,
+                    FileName = a.FileName,
+                    SharePointItemId = uploaded.ItemId,
+                    SharePointWebUrl = uploaded.WebUrl,
+                    SharePointETag = uploaded.ETag,
+                    SharePointVersion = uploaded.VersionLabel,
+                    UploadedAt = DateTimeOffset.UtcNow,
+                    UploadedBy = user.Id,
+                });
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        var rows = await db.CaseFileVersions.AsNoTracking()
+            .Where(x => x.CaseId == c.Id && x.CaseRevision == c.Revision)
+            .OrderBy(x => x.FileName)
+            .Select(x => new SharePointFileVersionDto(
+                x.Id, x.CaseId, x.AttachmentId, x.CaseRevision, x.FileName,
+                x.SharePointItemId, x.SharePointWebUrl, x.SharePointETag, x.SharePointVersion, x.UploadedAt, x.UploadedBy))
+            .ToListAsync(ct);
+
+        return Result<PublishCaseFilesResponse>.Ok(new PublishCaseFilesResponse(c.Id, c.Revision, rows));
+    }
+
+    public async Task<Result<IReadOnlyList<SharePointFileVersionDto>>> ListFileVersionsAsync(Guid id, CurrentUser user, CancellationToken ct)
+    {
+        var owned = await db.Cases.AsNoTracking().AnyAsync(x => x.Id == id && x.OwnerId == user.Id, ct);
+        if (!owned) return Result<IReadOnlyList<SharePointFileVersionDto>>.NotFound();
+
+        var rows = await db.CaseFileVersions.AsNoTracking()
+            .Where(x => x.CaseId == id)
+            .OrderByDescending(x => x.CaseRevision)
+            .ThenBy(x => x.FileName)
+            .Select(x => new SharePointFileVersionDto(
+                x.Id, x.CaseId, x.AttachmentId, x.CaseRevision, x.FileName,
+                x.SharePointItemId, x.SharePointWebUrl, x.SharePointETag, x.SharePointVersion, x.UploadedAt, x.UploadedBy))
+            .ToListAsync(ct);
+
+        return Result<IReadOnlyList<SharePointFileVersionDto>>.Ok(rows);
+    }
+
     // ---- helpers ----
 
     private async Task<string> NextCaseNumberAsync(CancellationToken ct)
     {
-        var n = await db.Database.SqlQuery<int>($"SELECT NEXT VALUE FOR dbo.CaseNumbers AS [Value]").SingleAsync(ct);
-        return $"PC-{DateTime.UtcNow.Year}-{n:D4}";
+        using var cmd = db.Database.GetDbConnection().CreateCommand();
+        cmd.CommandText = "SELECT NEXT VALUE FOR dbo.CaseNumbers";
+        cmd.CommandType = System.Data.CommandType.Text;
+        await db.Database.OpenConnectionAsync(ct);
+        using var transaction = await db.Database.BeginTransactionAsync(ct);
+        cmd.Transaction = transaction.GetDbTransaction();
+        try
+        {
+            var result = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+            return $"PC-{DateTime.UtcNow.Year}-{result:D4}";
+        }
+        finally { await transaction.RollbackAsync(ct); }
     }
 
     private static void Normalize(SaveCaseRequest r)
