@@ -70,7 +70,7 @@ namespace EntraApi.Migrations
 
                     b.HasIndex("UploadedBy", "DraftKey");
 
-                    b.ToTable("Attachments");
+                    b.ToTable("Attachments", (string)null);
                 });
 
             modelBuilder.Entity("PricingApi.Domain.CaseFileVersion", b =>
@@ -117,7 +117,7 @@ namespace EntraApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("CaseFileVersions");
+                    b.ToTable("CaseFileVersions", (string)null);
                 });
 
             modelBuilder.Entity("PricingApi.Domain.PricingCase", b =>
@@ -262,7 +262,7 @@ namespace EntraApi.Migrations
 
                     b.HasIndex("OwnerId", "Status");
 
-                    b.ToTable("Cases");
+                    b.ToTable("Cases", (string)null);
                 });
 
             modelBuilder.Entity("PricingApi.Domain.PricingCaseVersion", b =>
@@ -303,7 +303,7 @@ namespace EntraApi.Migrations
                     b.HasIndex("CaseId", "Revision")
                         .IsUnique();
 
-                    b.ToTable("CaseVersions");
+                    b.ToTable("CaseVersions", (string)null);
                 });
 
             modelBuilder.Entity("PricingApi.Domain.CaseAttachment", b =>
@@ -381,7 +381,7 @@ namespace EntraApi.Migrations
 
                             b1.HasKey("PricingCaseId");
 
-                            b1.ToTable("Cases");
+                            b1.ToTable("Cases", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("PricingCaseId");

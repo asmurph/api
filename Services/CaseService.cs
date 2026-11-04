@@ -139,7 +139,7 @@ public sealed class CaseService(
         var q = db.Cases.AsNoTracking().Where(x => x.OwnerId == user.Id);
         if (status is not null) q = q.Where(x => x.Status == status);
         return await q.OrderByDescending(x => x.UpdatedAt).Take(200)
-            .Select(x => new CaseSummary(x.Id, x.CaseNumber, x.Status.ToString(), x.Title, x.Code, x.Priority, x.DueDate, x.UpdatedAt))
+            .Select(x => new CaseSummary(x.Id, x.CaseNumber, x.Status.ToString(), x.Title, x.Code, x.Priority, x.DueDate, x.UpdatedAt, x.OwnerName))
             .ToListAsync(ct);
     }
 
@@ -436,5 +436,5 @@ public sealed class CaseService(
     private static CaseDetail ToDetail(PricingCase c) =>
         new(c.Id, c.CaseNumber, c.Status.ToString(), c.Revision, Convert.ToBase64String(c.RowVersion),
             c.CreatedAt, c.UpdatedAt, c.SubmittedAt, ToRequest(c),
-            c.Attachments.Select(a => new AttachmentDto(a.Id, a.FileName, a.Size, a.ContentType)).ToList());
+            c.Attachments.Select(a => new AttachmentDto(a.Id, a.FileName, a.Size, a.ContentType)).ToList(), c.OwnerName);
 }

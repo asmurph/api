@@ -71,10 +71,10 @@ public record AttachmentDto(Guid Id, string Name, long Size, string ContentType)
 public record CaseDetail(
     Guid Id, string CaseNumber, string Status, int Revision, string RowVersion,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? SubmittedAt,
-    SaveCaseRequest Data, IReadOnlyList<AttachmentDto> Attachments);
+    SaveCaseRequest Data, IReadOnlyList<AttachmentDto> Attachments, string OwnerName = "");
 
 public record CaseSummary(Guid Id, string CaseNumber, string Status, string Title, string? Code, string Priority,
-    DateOnly? DueDate, DateTimeOffset UpdatedAt);
+    DateOnly? DueDate, DateTimeOffset UpdatedAt, string OwnerName = "");
 
 public record CaseVersionSummary(Guid CaseId, int Revision, string Status, DateTimeOffset SavedAt, string SavedBy);
 
