@@ -11,7 +11,7 @@ using PricingApi.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddApplicationInsightsTelemetry();
+//builder.Services.AddApplicationInsightsTelemetry();
 
 builder.Services.AddDbContext<PricingDbContext>(options =>
     options.UseSqlServer(
