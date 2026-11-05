@@ -10,6 +10,7 @@
     <!-- Wraps Microsoft.AspNetCore.Authentication.JwtBearer with Entra ID defaults
          (issuer/audience/signing-key validation via OIDC metadata). -->
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.6.0" />
     <PackageReference Include="Microsoft.ApplicationInsights" Version="3.2.0" />
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="3.2.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.22">
@@ -22,6 +23,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Identity.Web" Version="3.*" />
+    <PackageReference Include="Microsoft.OpenTelemetry" Version="1.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.6" />
   </ItemGroup>
 

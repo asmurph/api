@@ -1,6 +1,5 @@
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using EntraApi.Services;
-using Microsoft.ApplicationInsights.Extensibility;
-using Microsoft.ApplicationInsights.AspNetCore.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
@@ -11,7 +10,17 @@ using PricingApi.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-//builder.Services.AddApplicationInsightsTelemetry();
+var appInsightsConnectionString =
+    builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+    ?? builder.Configuration["ApplicationInsights:ConnectionString"]
+    ?? throw new InvalidOperationException(
+        "Application Insights connection string is missing. Set APPLICATIONINSIGHTS_CONNECTION_STRING or ApplicationInsights:ConnectionString.");
+
+// Set env var so Azure Monitor exporter picks it up regardless of overload availability.
+Environment.SetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING", appInsightsConnectionString);
+
+// Avoid options overload compatibility issues.
+builder.Services.AddOpenTelemetry().UseAzureMonitor();
 
 builder.Services.AddDbContext<PricingDbContext>(options =>
     options.UseSqlServer(
