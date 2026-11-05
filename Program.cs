@@ -1,4 +1,6 @@
 using EntraApi.Services;
+using Microsoft.ApplicationInsights.Extensibility;
+using Microsoft.ApplicationInsights.AspNetCore.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
@@ -8,6 +10,8 @@ using PricingApi.Services;
 using PricingApi.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddApplicationInsightsTelemetry();
 
 builder.Services.AddDbContext<PricingDbContext>(options =>
     options.UseSqlServer(
