@@ -96,7 +96,8 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+var enableSwagger = app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled");
+if (enableSwagger)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -106,7 +107,12 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/", () => Results.Redirect("/swagger")).AllowAnonymous().ExcludeFromDescription();
+app.MapGet("/", () => enableSwagger
+    ? Results.Redirect("/swagger")
+    : Results.Ok(new { status = "ok" }))
+    .AllowAnonymous()
+    .ExcludeFromDescription();
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 app.MapControllers();
 
